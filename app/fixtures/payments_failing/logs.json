@@ -1,0 +1,9 @@
+{
+  "window": "last_15_minutes",
+  "lines": [
+    "2026-01-31T09:41:12.345Z ERROR payments-api TransactionID=abc123 Failed to authorize payment: timeout contacting upstream gateway",
+    "2026-01-31T09:42:03.872Z WARN payments-api Retry limit exceeded TransactionID=def456",
+    "2026-01-31T09:43:27.019Z ERROR payments-api CircuitBreakerOpenException upstream gateway unavailable",
+    "2026-01-31T09:44:55.611Z INFO health-check payments-api health=UNHEALTHY error_rate=12.4%"
+  ]
+}

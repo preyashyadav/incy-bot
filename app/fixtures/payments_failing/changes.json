@@ -1,0 +1,19 @@
+{
+  "recent_changes": [
+    {
+      "ts": "2026-01-30T22:15:00Z",
+      "type": "deploy",
+      "summary": "Deployed payments-api v2.4.1 (includes new gateway client library v3.2.0)"
+    },
+    {
+      "ts": "2026-01-30T23:00:00Z",
+      "type": "feature_flag",
+      "summary": "Enabled enable_new_gateway for region us-east (10% traffic)"
+    },
+    {
+      "ts": "2026-01-31T03:45:00Z",
+      "type": "config",
+      "summary": "Reduced gateway request timeout from 2s to 1s"
+    }
+  ]
+}

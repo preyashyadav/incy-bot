@@ -1,0 +1,131 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Slack Bridge API",
+    "version": "1.0.0",
+    "description": "watsonx Orchestrate tool to post alerts and thread updates to Slack via FastAPI"
+  },
+  "servers": [
+    {
+      "url": "https://fever-manufactured-explosion-couple.trycloudflare.com"
+    }
+  ],
+  "paths": {
+    "/slack/alert": {
+      "post": {
+        "operationId": "sendSlackAlert",
+        "summary": "Send an incident alert to Slack with approval buttons",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/Alert" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert posted to Slack",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/incident/start": {
+      "post": {
+        "operationId": "startIncident",
+        "summary": "Start incident workflow and return structured result",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/Alert" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Incident started",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IncidentResult" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/slack/thread_update": {
+      "post": {
+        "operationId": "postSlackThreadUpdate",
+        "summary": "Post a message into an existing Slack thread",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ThreadUpdate" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Thread updated",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Alert": {
+        "type": "object",
+        "required": ["alert_id", "service", "severity", "short_summary", "timestamp"],
+        "properties": {
+          "alert_id": { "type": "string" },
+          "service": { "type": "string" },
+          "severity": { "type": "string" },
+          "short_summary": { "type": "string" },
+          "timestamp": { "type": "string" }
+        }
+      },
+      "ThreadUpdate": {
+        "type": "object",
+        "required": ["channel_id", "thread_ts", "text"],
+        "properties": {
+          "channel_id": { "type": "string" },
+          "thread_ts": { "type": "string" },
+          "text": { "type": "string" }
+        }
+      },
+      "IncidentResult": {
+        "type": "object",
+        "properties": {
+          "incident_id": { "type": "string" },
+          "status": { "type": "string" },
+          "severity": { "type": "string" },
+          "service": { "type": "string" },
+          "summary": { "type": "string" },
+          "evidence": { "type": "object" },
+          "recommended_actions": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "suggested_mitigations": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "next_update_minutes": { "type": "integer" }
+        }
+      }
+    }
+  }
+}

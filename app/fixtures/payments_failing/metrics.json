@@ -1,0 +1,9 @@
+{
+  "time_range": "last_15_minutes",
+  "error_rate": 0.124,
+  "p95_latency_ms": 1450,
+  "request_rate_rps": 320,
+  "upstream_timeout_rate": 0.098,
+  "cpu_utilization_percent": 68,
+  "memory_usage_mb": 512
+}

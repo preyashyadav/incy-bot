@@ -1,0 +1,13 @@
+{
+  "runbook_title": "Payments failing (gateway timeouts)",
+  "steps": [
+    "Check service health endpoint and confirm unhealthy status",
+    "Check logs for upstream timeouts and circuit breaker events",
+    "Check metrics for error_rate and upstream_timeout_rate spikes",
+    "Review recent deploys, feature flags, and config changes",
+    "Mitigation: disable enable_new_gateway for impacted region",
+    "Mitigation: rollback payments-api to last known good deploy",
+    "Mitigation: revert gateway timeout config to 2s temporarily",
+    "Post mitigation: confirm error_rate drop and circuit breaker reset"
+  ]
+}

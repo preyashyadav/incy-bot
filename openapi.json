@@ -1,0 +1,632 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Incident Evidence Service",
+    "description": "Mock evidence + incident state + KB retrieval for Incident Response demo (hackathon POC).",
+    "version": "0.2.0"
+  },
+  "paths": {
+    "/incidents": {
+      "post": {
+        "summary": "Create Incident",
+        "operationId": "create_incident_incidents_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateIncidentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/incidents/{incident_id}/assign": {
+      "post": {
+        "summary": "Assign Owners",
+        "operationId": "assign_owners_incidents__incident_id__assign_post",
+        "parameters": [
+          {
+            "name": "incident_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Incident Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssignResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/incidents/{incident_id}/evidence": {
+      "get": {
+        "summary": "Get Evidence",
+        "operationId": "get_evidence_incidents__incident_id__evidence_get",
+        "parameters": [
+          {
+            "name": "incident_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Incident Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/incidents/{incident_id}/notes": {
+      "post": {
+        "summary": "Add Note",
+        "operationId": "add_note_incidents__incident_id__notes_post",
+        "parameters": [
+          {
+            "name": "incident_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Incident Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddNoteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddNoteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kb/search": {
+      "get": {
+        "summary": "Search Kb",
+        "operationId": "search_kb_kb_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Search query for runbooks/policies",
+              "title": "Q"
+            },
+            "description": "Search query for runbooks/policies"
+          },
+          {
+            "name": "k",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 10,
+              "minimum": 1,
+              "description": "Number of results",
+              "default": 3,
+              "title": "K"
+            },
+            "description": "Number of results"
+          },
+          {
+            "name": "incident_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional incident type (boost)",
+              "title": "Incident Type"
+            },
+            "description": "Optional incident type (boost)"
+          },
+          {
+            "name": "service",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional service (boost)",
+              "title": "Service"
+            },
+            "description": "Optional service (boost)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KBSearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AddNoteRequest": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Note type, e.g., comms_postmortem"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Short title for the note"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload",
+            "description": "Structured content to store (JSON)"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By",
+            "description": "Source of the note",
+            "default": "orchestrate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "AddNoteRequest"
+      },
+      "AddNoteResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id"
+          },
+          "note_id": {
+            "type": "string",
+            "title": "Note Id"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "notes_count": {
+            "type": "integer",
+            "title": "Notes Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "incident_id",
+          "note_id",
+          "created_at",
+          "notes_count"
+        ],
+        "title": "AddNoteResponse"
+      },
+      "AlertPayload": {
+        "properties": {
+          "incident_type": {
+            "type": "string",
+            "enum": [
+              "payments_failing",
+              "login_outage",
+              "latency_regression"
+            ],
+            "title": "Incident Type"
+          },
+          "service": {
+            "type": "string",
+            "title": "Service"
+          },
+          "signal": {
+            "type": "string",
+            "enum": [
+              "error_rate_spike",
+              "availability_drop",
+              "p95_latency_spike"
+            ],
+            "title": "Signal"
+          },
+          "start_time": {
+            "type": "string",
+            "title": "Start Time"
+          },
+          "impact": {
+            "type": "string",
+            "title": "Impact"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_type",
+          "service",
+          "signal",
+          "start_time",
+          "impact"
+        ],
+        "title": "AlertPayload"
+      },
+      "AssignResponse": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id"
+          },
+          "assignees": {
+            "items": {
+              "$ref": "#/components/schemas/Assignee"
+            },
+            "type": "array",
+            "title": "Assignees"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "assignees"
+        ],
+        "title": "AssignResponse"
+      },
+      "Assignee": {
+        "properties": {
+          "team": {
+            "type": "string",
+            "title": "Team"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "Primary",
+              "Secondary"
+            ],
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "team",
+          "role"
+        ],
+        "title": "Assignee"
+      },
+      "CreateIncidentResponse": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "SEV1",
+              "SEV2",
+              "SEV3"
+            ],
+            "title": "Severity"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "severity",
+          "created_at"
+        ],
+        "title": "CreateIncidentResponse"
+      },
+      "EvidenceBundle": {
+        "properties": {
+          "logs": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Logs"
+          },
+          "metrics": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metrics"
+          },
+          "changes": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Changes"
+          },
+          "runbook": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Runbook"
+          }
+        },
+        "type": "object",
+        "required": [
+          "logs",
+          "metrics",
+          "changes",
+          "runbook"
+        ],
+        "title": "EvidenceBundle"
+      },
+      "EvidenceResponse": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id"
+          },
+          "incident_type": {
+            "type": "string",
+            "enum": [
+              "payments_failing",
+              "login_outage",
+              "latency_regression"
+            ],
+            "title": "Incident Type"
+          },
+          "service": {
+            "type": "string",
+            "title": "Service"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "evidence_bundle": {
+            "$ref": "#/components/schemas/EvidenceBundle"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "incident_type",
+          "service",
+          "evidence_bundle"
+        ],
+        "title": "EvidenceResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "KBSearchResponse": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "matched_query": {
+            "type": "string",
+            "title": "Matched Query"
+          },
+          "top_k": {
+            "type": "integer",
+            "title": "Top K"
+          },
+          "results": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "matched_query",
+          "top_k",
+          "results"
+        ],
+        "title": "KBSearchResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "https://fever-manufactured-explosion-couple.trycloudflare.com"
+    }
+  ]
+}
