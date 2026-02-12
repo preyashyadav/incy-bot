@@ -2,6 +2,9 @@
 
 FastAPI service for incident response demos. It handles incident intake, evidence retrieval from fixtures, KB search, Slack-triggered workflows, and an OpenAI-powered agent that uses internal tools.
 
+<img width="3024" height="1964" alt="image" src="https://github.com/user-attachments/assets/bd03a763-e15d-49a9-a337-4e4721520505" />
+
+
 ## Features
 - Incident lifecycle endpoints: create, assign, evidence, notes.
 - KB search with SQLite FTS5 chunks.
