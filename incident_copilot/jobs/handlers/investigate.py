@@ -19,8 +19,17 @@ from incident_copilot.config import get_settings
 from incident_copilot.controlplane.pg_store import PostgresControlPlaneStore
 from incident_copilot.controlplane.scenarios import get_registry
 from incident_copilot.db import repositories as repo
-from incident_copilot.db.models import EventType, Incident, Job, Proposal, ProposalStatus
+from incident_copilot.db.models import (
+    ApprovalToken,
+    EventType,
+    Incident,
+    Job,
+    Proposal,
+    ProposalStatus,
+)
 from incident_copilot.jobs import handlers
+from incident_copilot.slack import blocks as B
+from incident_copilot.slack.notify import get_notifier
 
 logger = logging.getLogger(__name__)
 
@@ -108,14 +117,16 @@ def handle_investigate(session: Session, job: Job) -> None:
         raw=proposal.model_dump(mode="json"),
     )
 
-    # Mint the tokens the Slack card's buttons will carry. Phase 5 renders them; issuing them
-    # here keeps the proposal and its authorisations in one transaction.
-    repo.issue_approval_token(
+    # Mint the tokens the card's buttons carry, in the same transaction as the proposal so a
+    # card can never be rendered against authorisations that were rolled back.
+    approve = repo.issue_approval_token(
         session, record, decision="approve", ttl_seconds=settings.approval_token_ttl_seconds
     )
-    repo.issue_approval_token(
+    reject = repo.issue_approval_token(
         session, record, decision="reject", ttl_seconds=settings.approval_token_ttl_seconds
     )
+
+    _post_proposal(incident, record, approve, reject)
 
     logger.info(
         "incident %s: %s proposed with %s action(s), confidence %s",
@@ -123,4 +134,27 @@ def handle_investigate(session: Session, job: Job) -> None:
         proposal.severity,
         len(validated),
         proposal.confidence,
+    )
+
+
+def _post_proposal(
+    incident: Incident,
+    proposal: Proposal,
+    approve: ApprovalToken,
+    reject: ApprovalToken,
+) -> None:
+    """Post the approval card into the incident thread.
+
+    Best-effort: a Slack failure must not fail the job. The work is already recorded, and
+    raising here would make an at-least-once retry re-run the whole investigation — paying for a
+    second model call to fix a posting problem.
+    """
+    if not incident.slack_channel_id:
+        logger.debug("incident %s has no slack thread; skipping card", incident.key)
+        return
+    get_notifier().post(
+        incident.slack_channel_id,
+        B.proposal_text(incident, proposal),
+        thread_ts=incident.slack_thread_ts,
+        blocks=B.proposal_blocks(incident, proposal, approve_token=approve, reject_token=reject),
     )

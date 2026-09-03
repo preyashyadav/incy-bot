@@ -2,7 +2,7 @@
 PY := .venv/bin/python
 PIP := .venv/bin/pip
 
-.PHONY: help venv install db-up db-down db-reset migrate revision index api worker lint fmt type test test-live check clean
+.PHONY: help venv install db-up db-down db-reset migrate revision index api worker slack lint fmt type test test-live check clean
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -43,6 +43,9 @@ api: ## Run the API with reload
 
 worker: ## Run the job worker
 	$(PY) -m incident_copilot.jobs.worker
+
+slack: ## Run the Slack app in Socket Mode (needs SLACK_APP_TOKEN)
+	$(PY) -m incident_copilot.slack.app
 
 lint: ## Lint
 	$(PY) -m ruff check incident_copilot tests
