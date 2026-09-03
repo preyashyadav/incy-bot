@@ -24,7 +24,7 @@ from incident_copilot.config import Settings, get_settings
 from incident_copilot.db.models import Job, JobStatus
 from incident_copilot.db.session import session_scope
 from incident_copilot.jobs import queue
-from incident_copilot.jobs.handlers import UnknownJobKind, get_handler
+from incident_copilot.jobs.handlers import UnknownJobKind, get_handler, load_all
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +158,9 @@ def main() -> None:
         level=settings.log_level,
         format="%(asctime)s %(levelname)-5s [%(name)s] %(message)s",
     )
+    kinds = load_all()
+    logger.info("handlers registered: %s", ", ".join(kinds) or "(none)")
+
     worker = Worker(settings)
     worker.install_signal_handlers()
     worker.run_forever()

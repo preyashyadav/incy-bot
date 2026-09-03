@@ -351,8 +351,8 @@ def test_list_shows_the_catalogue(app: Any, slack: Any) -> None:
     assert "payments_gateway_timeout" in json.dumps(posted(slack, "respond")[-1])
 
 
-def test_bare_command_shows_help(app: Any, slack: Any) -> None:
-    send(app, command(""))
+def test_explicit_help_shows_usage(app: Any, slack: Any) -> None:
+    send(app, command("help"))
     assert "/incident triage" in json.dumps(posted(slack, "respond")[-1])
 
 
@@ -408,3 +408,119 @@ def test_explain_opens_the_evidence_modal(
     assert opened, "the modal was never opened"
     rendered = json.dumps(opened[-1]["view"])
     assert "get_metrics()" in rendered  # the audit trail is what the modal is for
+
+
+# ---------------------------------------------------------------------------
+# Command text normalisation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "triage payments_gateway_timeout",
+        "`triage payments_gateway_timeout`",  # composed with code formatting on
+        "  triage   payments_gateway_timeout  ",
+        "triage payments_gateway_timeout",  # non-breaking space
+        "​triage payments_gateway_timeout",  # zero-width space
+        "/incident triage payments_gateway_timeout",  # command echoed into the argument
+    ],
+)
+def test_command_text_is_normalised_before_parsing(app: Any, db: Session, raw: str) -> None:
+    """A user who formatted their message oddly still meant `triage`.
+
+    Regression guard: an unnormalised value fell through to the help branch, which looks like
+    the bot ignoring the command and says nothing about why.
+    """
+    from incident_copilot.slack.handlers import normalise_command_text
+
+    assert normalise_command_text(raw) == "triage payments_gateway_timeout"
+
+    body = urlencode(
+        {
+            "channel_id": CHANNEL,
+            "user_id": USER,
+            "command": "/incident",
+            "text": raw,
+            "response_url": f"https://hooks.slack.example/c/{abs(hash(raw))}",
+            "trigger_id": f"trigger-{abs(hash(raw))}",
+        }
+    )
+    assert send(app, body).status == 200
+    assert db.query(Incident).count() == 1, f"{raw!r} did not triage an incident"
+
+
+@pytest.mark.parametrize("raw", [None, "", "   ", "`  `"])
+def test_empty_command_text_still_means_help(raw: str | None) -> None:
+    from incident_copilot.slack.handlers import normalise_command_text
+
+    assert normalise_command_text(raw) == ""
+
+
+def test_bare_command_offers_clickable_scenarios(app: Any, slack: Any) -> None:
+    """Slack can deliver a command with empty text; the reply must still be actionable.
+
+    Observed in the real workspace: `/incident triage payments_gateway_timeout` composed with
+    rich-text formatting arrived as `text=''`. Telling the user to retype is not a fix when the
+    retype can fail the same way.
+    """
+    send(app, command(""))
+    rendered = posted(slack, "respond")[-1]
+    accessories = [
+        b["accessory"] for b in rendered["blocks"] if b.get("accessory", {}).get("type") == "button"
+    ]
+    assert len(accessories) >= 5, "the picker offered no buttons"
+    assert {a["action_id"] for a in accessories} == {"triage_scenario"}
+    assert "payments_gateway_timeout" in {a["value"] for a in accessories}
+
+
+def test_triage_button_opens_an_incident(app: Any, db: Session, slack: Any) -> None:
+    body = urlencode(
+        {
+            "payload": json.dumps(
+                {
+                    "type": "block_actions",
+                    "user": {"id": USER},
+                    "channel": {"id": CHANNEL},
+                    "message": {"ts": "1700000001.000100"},
+                    "trigger_id": "trigger-triage-button",
+                    "actions": [
+                        {
+                            "action_id": "triage_scenario",
+                            "type": "button",
+                            "value": "payments_gateway_timeout",
+                        }
+                    ],
+                }
+            )
+        }
+    )
+    assert send(app, body).status == 200
+
+    incident = db.query(Incident).one()
+    assert incident.scenario_key == "payments_gateway_timeout"
+    assert incident.slack_thread_ts is not None
+    assert posted(slack, "chat_postMessage"), "no alert card was posted"
+
+
+def test_triage_button_rejects_an_unknown_scenario(app: Any, db: Session, slack: Any) -> None:
+    """The button value is client-controlled, so it is validated against the registry."""
+    body = urlencode(
+        {
+            "payload": json.dumps(
+                {
+                    "type": "block_actions",
+                    "user": {"id": USER},
+                    "channel": {"id": CHANNEL},
+                    "message": {"ts": "1700000001.000100"},
+                    "trigger_id": "trigger-bad-scenario",
+                    "actions": [
+                        {"action_id": "triage_scenario", "type": "button", "value": "../../etc"}
+                    ],
+                }
+            )
+        }
+    )
+    assert send(app, body).status == 200
+    assert db.query(Incident).count() == 0
+    assert "Available" in posted(slack, "chat_postEphemeral")[-1]["text"]

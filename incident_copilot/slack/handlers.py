@@ -16,6 +16,7 @@ about Slack and is tested without it.
 from __future__ import annotations
 
 import logging
+import unicodedata
 from collections.abc import Callable
 from typing import Any
 
@@ -31,11 +32,36 @@ logger = logging.getLogger(__name__)
 
 HELP = (
     "*Incident Copilot*\n"
+    "• `/incident` — pick a scenario to simulate (buttons)\n"
     "• `/incident triage <scenario>` — simulate an incident and post an alert\n"
     "• `/incident status <INC-…>` — show an incident's timeline\n"
     "• `/incident list` — list available scenarios\n"
     "Mention me in a thread to ask what happened."
 )
+
+
+def normalise_command_text(raw: str | None) -> str:
+    """Clean the argument text of a slash command before parsing it.
+
+    Slack does not always deliver what the user appears to have typed. Composing with code
+    formatting active wraps the text in backticks, and smart substitution introduces
+    non-breaking spaces and typographic quotes. None of that should change which subcommand
+    runs — a user who formatted their message oddly still meant `triage`.
+
+    Without this, the symptom is silent and confusing: the command is accepted, the bot replies,
+    and the reply is the help text, with nothing in the logs to say why.
+    """
+    if not raw:
+        return ""
+    # NFKC folds most typographic variants back to ASCII equivalents.
+    text = unicodedata.normalize("NFKC", raw)
+    for junk in ("\u00a0", "\u200b", "\u200c", "\u200d", "\ufeff"):
+        text = text.replace(junk, " " if junk == "\u00a0" else "")
+    text = text.strip().strip("`").strip()
+    # A code-formatted command can arrive with the command word repeated in the argument text.
+    if text.startswith("/incident"):
+        text = text[len("/incident") :].strip()
+    return " ".join(text.split())
 
 
 def delivery_key(body: dict[str, Any], request: Any) -> str:
@@ -68,18 +94,26 @@ def register(app: App) -> None:
         client: Any,
     ) -> None:
         ack()
-        text = (body.get("text") or "").strip()
+        raw = body.get("text")
+        text = normalise_command_text(raw)
         channel_id = body["channel_id"]
         user_id = body["user_id"]
+        # Logged at INFO because "the bot replied with help and I don't know why" is otherwise
+        # undiagnosable from the outside.
+        logger.info("/incident from %s: raw=%r parsed=%r", user_id, raw, text)
 
         parts = text.split()
-        verb = parts[0].lower() if parts else "help"
+        # Empty text falls through to the picker, not the help text — see the "" branch.
+        verb = parts[0].lower() if parts else ""
         argument = parts[1] if len(parts) > 1 else None
 
         try:
-            if verb in {"", "help"}:
+            if verb == "help":
                 respond(text=HELP, response_type="ephemeral")
-            elif verb == "list":
+            elif verb in {"", "list"}:
+                # A bare `/incident` lands here rather than on the help text. Slack sometimes
+                # delivers the arguments as an empty string, so "no arguments" is at least as
+                # likely to mean "the arguments were lost" as "show me the help".
                 respond(
                     blocks=B.scenario_picker_blocks(service.scenario_catalogue()),
                     text="Available scenarios",
@@ -93,7 +127,7 @@ def register(app: App) -> None:
                         response_type="ephemeral",
                     )
                     return
-                _triage(client, channel_id, argument, user_id, respond)
+                _triage(client, channel_id, argument, user_id)
             elif verb == "status":
                 if argument is None:
                     respond(text="Usage: `/incident status INC-…`", response_type="ephemeral")
@@ -134,6 +168,24 @@ def register(app: App) -> None:
             text=f"🔍 <@{user_id}> started an investigation of {key}. "
             "Gathering evidence — I'll post a proposal here.",
         )
+
+    @app.action("triage_scenario")
+    def handle_triage_button(
+        ack: Callable[..., None], body: dict[str, Any], client: Any, request: Any = None
+    ) -> None:
+        """Triage from the picker — the path that works when the slash arguments are lost."""
+        ack()
+        user_id = body["user"]["id"]
+        channel_id = body["channel"]["id"]
+        scenario_key = str(body["actions"][0].get("value") or "")
+
+        with session_scope() as session:
+            if repo.is_duplicate_delivery(session, delivery_key(body, request), "triage"):
+                return
+        try:
+            _triage(client, channel_id, scenario_key, user_id)
+        except SlackActionRefused as exc:
+            _ephemeral(client, channel_id, user_id, f":warning: {exc}")
 
     @app.action("ignore_alert")
     def handle_ignore(
@@ -280,9 +332,7 @@ def register(app: App) -> None:
 
     # -- helpers ----------------------------------------------------------
 
-    def _triage(
-        client: Any, channel_id: str, scenario_key: str, user_id: str, respond: Callable[..., None]
-    ) -> None:
+    def _triage(client: Any, channel_id: str, scenario_key: str, user_id: str) -> None:
         with session_scope() as session:
             triaged = service.triage_scenario(
                 session, scenario_key, channel_id=channel_id, actor=user_id

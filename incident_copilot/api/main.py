@@ -15,7 +15,7 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from incident_copilot.api import scenarios
+from incident_copilot.api import dashboard, scenarios
 from incident_copilot.config import get_settings
 from incident_copilot.db.session import get_engine
 
@@ -31,6 +31,7 @@ class Health(BaseModel):
 class Readiness(BaseModel):
     status: Literal["ready", "degraded"]
     database: Literal["up", "down"]
+    knowledge_base: Literal["indexed", "empty", "unknown"] = "unknown"
     detail: str | None = None
 
 
@@ -80,6 +81,7 @@ app = FastAPI(
 )
 
 app.include_router(scenarios.router)
+app.include_router(dashboard.router)
 _mount_slack(app)
 
 
@@ -100,6 +102,19 @@ def readyz() -> Readiness:
     try:
         with get_engine().connect() as conn:
             conn.execute(text("SELECT 1"))
+            indexed = conn.execute(text("SELECT EXISTS (SELECT 1 FROM kb_chunks)")).scalar()
     except Exception as exc:
         return Readiness(status="degraded", database="down", detail=type(exc).__name__)
-    return Readiness(status="ready", database="up")
+
+    if not indexed:
+        # An empty index does not break anything — retrieval simply returns nothing and the
+        # agent falls back on telemetry alone. That silent degradation is worse than a loud
+        # failure: investigations still look successful while the knowledge base contributes
+        # nothing at all.
+        return Readiness(
+            status="degraded",
+            database="up",
+            knowledge_base="empty",
+            detail="knowledge base is empty; run `make index`",
+        )
+    return Readiness(status="ready", database="up", knowledge_base="indexed")

@@ -252,7 +252,8 @@ make slack
 ```
 
 ✅ **Checks:**
-- `curl -s localhost:8000/readyz` → `{"status":"ready","database":"up",...}`
+- `curl -s localhost:8000/readyz` → `{"status":"ready","database":"up","knowledge_base":"indexed"}`
+  — a `"knowledge_base":"empty"` here means retrieval will silently return nothing; run `make index`
 - terminal 2 logs `worker <host>:<pid>:<id> started`
 - terminal 3 logs a Socket Mode connection and shows no traceback
 
@@ -299,6 +300,23 @@ Other commands:
 | `noisy_neighbor_traffic_surge` | SEV3 | Everything inside SLO — the right answer is **no action** |
 
 Run the last one to see the bot decline to act. That's the most interesting demo.
+
+---
+
+## 7b. The dashboard
+
+`http://localhost:8000/dashboard` — read-only, and the place to see *why* a proposal said what
+it said.
+
+| Page | Shows |
+|---|---|
+| `/dashboard` | Every incident, severity, status, and the fix that was proposed |
+| `/dashboard/incidents/<KEY>` | Diagnosis, actions with risk, the tools called, token spend, the timeline, live system state, and every citation **linked to its source document** |
+| `/dashboard/kb` | The whole corpus — 30 runbook/policy sections and 24 resolved incidents |
+| `/dashboard/kb/<chunk-id>` | One document's text, its source file, and which incidents cited it |
+| `/dashboard/scenarios` | Live derived metrics per scenario |
+
+Approval stays in Slack, where the tokens are. Nothing on the dashboard mutates anything.
 
 ---
 
@@ -363,7 +381,8 @@ is live and covers it for now), and structured logging + a scripted demo walkthr
 | Clicked Investigate, nothing appears | worker isn't running | start `make worker`; check for `pending` rows in `jobs` |
 | `no handler registered for job kind 'execute_remediation'` | phase 6 isn't built | expected — see §9 |
 | Investigation fails with an auth error | no Anthropic credentials | set `ANTHROPIC_API_KEY` in `.env` |
-| `search_runbooks` returns nothing | index not built | `make index` |
+| `search_runbooks` returns nothing | index not built | `make index`; `/readyz` reports `knowledge_base: empty` |
+| Proposals cite only tools, no documents | the knowledge base is empty | same — `make index` |
 | "this approval has already been used" | tokens are single-use by design | run `/incident triage …` again for a fresh incident |
 | Proposal card never arrives but the job succeeded | no `SLACK_BOT_TOKEN`, so posting is disabled | set it; the run still completes and is on the timeline |
 
@@ -399,7 +418,7 @@ make db-reset     # destroys the volume, re-migrates, re-indexes
 | `make api` | FastAPI on :8000 |
 | `make worker` | the job worker |
 | `make slack` | Slack in Socket Mode |
-| `make check` | lint + types + tests (what CI runs) |
+| `make check` | lint + types + tests (what CI runs) — safe to run while demoing; tests use a separate `copilot_test` database |
 | `make test-live` | live-model tests — **costs money**, needs an API key |
 
 ### Switching to HTTP mode
@@ -449,6 +468,8 @@ Tell me when the live tests have run — if Claude misdiagnoses any scenario,
 |---|---|
 | 2026-09-03 | Created at the end of phase 5. Covers setup, Slack app creation, running, and the phase 6 gap. |
 | 2026-09-03 | §5 rewritten to update the existing **incy** app rather than create a new one; added `slack-app-manifest.json`. |
+| 2026-09-03 | Noted that the test suite now uses its own `copilot_test` database, so `make check` no longer wipes a running demo. |
+| 2026-09-03 | Added §7b for the dashboard; `/readyz` now reports knowledge-base state. |
 
 This manual is updated at the end of every phase. Phase 6 will replace §9's "not built yet" with
 the execution and verification flow, and add a verdict card to §7.

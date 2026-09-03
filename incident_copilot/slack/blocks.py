@@ -398,9 +398,39 @@ def timeline_blocks(incident: Incident, events: list[IncidentEvent]) -> list[Blo
 
 
 def scenario_picker_blocks(scenarios: list[tuple[str, str, str]]) -> list[Block]:
-    """Offered when `/incident triage` is called without a scenario."""
-    return [
-        _mrkdwn("*Which incident should I simulate?*"),
-        *[_mrkdwn(f"`{key}` — {title}\n_{severity}_") for key, title, severity in scenarios],
-        _context("Usage: `/incident triage <scenario>` · `/incident status <INC-…>`"),
-    ]
+    """The scenario menu, with a button per scenario.
+
+    Buttons rather than instructions-to-retype, because Slack does not reliably deliver a slash
+    command's argument text: composing the command with rich-text formatting active sends the
+    command with an empty `text`, and the user sees a help message with no explanation. A button
+    cannot lose its payload that way.
+
+    The value here is a plain scenario key rather than a signed token, unlike the approval
+    buttons. That is deliberate and not an inconsistency: triage creates a demo incident and
+    resets a simulated scenario, which anyone able to run the slash command can already do. The
+    key is validated against the registry, and an unknown one is refused. Tokens guard changes
+    to the running system; this changes nothing.
+    """
+    blocks: list[Block] = [_mrkdwn("*Which incident should I simulate?*")]
+    for key, title, severity in scenarios:
+        blocks.append(
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"{SEVERITY_EMOJI.get(severity, '⚪')} *{title}*\n`{key}`",
+                },
+                "accessory": {
+                    "type": "button",
+                    "action_id": "triage_scenario",
+                    "text": {"type": "plain_text", "text": "Triage", "emoji": True},
+                    "value": key,
+                },
+            }
+        )
+    blocks.append(
+        _context(
+            "Or type `/incident triage <scenario>` — as *plain text*, not inside a code block."
+        )
+    )
+    return blocks

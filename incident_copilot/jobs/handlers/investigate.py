@@ -28,6 +28,7 @@ from incident_copilot.db.models import (
     ProposalStatus,
 )
 from incident_copilot.jobs import handlers
+from incident_copilot.retrieval.index import is_indexed
 from incident_copilot.slack import blocks as B
 from incident_copilot.slack.notify import get_notifier
 
@@ -52,6 +53,16 @@ def handle_investigate(session: Session, job: Job) -> None:
     settings = get_settings()
     scenario = get_registry().get(incident.scenario_key)
     state = PostgresControlPlaneStore().get_in(session, incident.scenario_key)
+
+    if not is_indexed(session):
+        # Not fatal — the agent can still reason from telemetry — but it means every runbook
+        # and prior-incident search will come back empty, so say so rather than letting the
+        # investigation look complete.
+        logger.warning(
+            "knowledge base is empty; %s will be investigated from telemetry alone. "
+            "Run `make index`.",
+            incident.key,
+        )
 
     repo.append_event(session, incident, EventType.INVESTIGATION_STARTED)
 

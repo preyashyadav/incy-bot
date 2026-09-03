@@ -10,6 +10,8 @@ work and marking the job complete will run the same job again.
 
 from __future__ import annotations
 
+import importlib
+import pkgutil
 from collections.abc import Callable
 
 from sqlalchemy.orm import Session
@@ -54,3 +56,20 @@ def registered_kinds() -> list[str]:
 def unregister(kind: str) -> None:
     """Remove a handler. Test-support only — the registry is process-global."""
     _HANDLERS.pop(kind, None)
+
+
+def load_all() -> list[str]:
+    """Import every handler module in this package so their decorators run.
+
+    Registration is a side effect of import, which means a process that never imports
+    `handlers.investigate` has no investigate handler — and finds out only when a job is claimed
+    and buried. That is precisely the bug this function exists to prevent: the test suite imports
+    handler modules directly, so it cannot catch a worker that does not.
+
+    Discovery rather than an explicit import list, so a handler added in a later phase is picked
+    up by existing entry points without anyone remembering to wire it.
+    """
+    package = importlib.import_module(__name__)
+    for module in pkgutil.iter_modules(package.__path__):
+        importlib.import_module(f"{__name__}.{module.name}")
+    return registered_kinds()
