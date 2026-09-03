@@ -1,0 +1,112 @@
+key: checkout_memory_leak
+title: Checkout memory leak — heap growth between restarts
+description: >-
+  checkout-api leaks a few hundred MB per hour and degrades once it has been running for roughly
+  four hours. A restart clears it completely, which is what makes this scenario interesting: the
+  correct immediate action is a restart, and the correct *overall* answer is a restart plus a
+  follow-up, because the leak returns. Verification will pass while the underlying defect
+  remains.
+service: checkout-api
+expected_severity: SEV2
+
+alert:
+  signal: error_rate_spike
+  summary: "checkout-api memory above 90% of limit, error rate climbing"
+  impact: "Intermittent checkout failures and GC pauses"
+  detected_at: 2026-02-18T19:44:00Z
+
+initial:
+  region: us-east
+  clock: 2026-02-18T20:00:00Z
+  request_rate_rps: 240
+  services:
+    - name: checkout-api
+      deployed_version: v4.2.2
+      previous_version: v4.2.1
+      replicas: 4
+      min_replicas: 2
+      max_replicas: 16
+      # Six hours since the last restart, past the four-hour degradation threshold.
+      last_restart: 2026-02-18T14:00:00Z
+  flags:
+    - key: cart_session_cache
+      regions:
+        us-east: true
+        eu-west: true
+  config:
+    - key: heap_limit_mb
+      value: 2048
+    - key: cart_cache_ttl_seconds
+      value: 3600
+  changes:
+    - at: 2026-02-16T09:30:00Z
+      kind: deploy
+      summary: "Deployed checkout-api v4.2.2 (cart session cache)"
+      actor: ci-bot
+    - at: 2026-02-18T14:00:00Z
+      kind: restart
+      summary: "Rolling restart of checkout-api during routine maintenance"
+      actor: platform-eng
+
+baseline:
+  window: last_15_minutes
+  error_rate: 0.002
+  p95_latency_ms: 280
+  upstream_timeout_rate: 0.0
+  availability: 0.999
+  cpu_utilization_percent: 40
+  memory_usage_mb: 620
+  request_rate_rps: 240
+  replicas: 4
+
+baseline_logs:
+  - level: INFO
+    service: checkout-api
+    message: "cart cache entries=48211 ttl={config.cart_cache_ttl_seconds}s"
+
+faults:
+  - id: heap_exhaustion_after_uptime
+    description: >-
+      Cart session entries are never evicted, so the heap fills over roughly four hours of
+      uptime. GC pressure raises latency and CPU, and allocation failures surface as errors.
+    when:
+      minutes_since_restart_gt:
+        checkout-api: 240
+    effect:
+      memory_usage_mb: 1280
+      error_rate: 0.035
+      p95_latency_ms: 620
+      cpu_utilization_percent: 28
+      availability: -0.02
+    logs:
+      - level: ERROR
+        service: checkout-api
+        message: "OutOfMemoryError allocating cart session heap_limit={config.heap_limit_mb}MB"
+        count: 2
+      - level: WARN
+        service: checkout-api
+        message: "GC pause exceeded threshold pause_ms=1840 collections=27"
+      - level: WARN
+        service: checkout-api
+        message: "Cart cache eviction skipped entries={config.cart_cache_ttl_seconds}"
+      - level: INFO
+        service: health-check
+        message: "checkout-api health=DEGRADED replicas={replicas.checkout-api}"
+
+slo:
+  max_error_rate: 0.01
+  max_p95_latency_ms: 800
+  max_upstream_timeout_rate: 0.01
+  min_availability: 0.995
+  max_cpu_utilization_percent: 85
+  max_memory_usage_mb: 1600
+
+ground_truth:
+  action:
+    kind: restart_service
+    service: checkout-api
+  rationale: >-
+    A restart clears the heap and restores service immediately. It is a mitigation, not a fix —
+    the leak recurs after roughly four hours — so a follow-up to address the unbounded cart cache
+    is expected alongside it.
+  requires_followup: true

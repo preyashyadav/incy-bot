@@ -1,0 +1,120 @@
+key: payments_gateway_timeout
+title: Payments failing — upstream gateway timeouts
+description: >-
+  A gateway request timeout was tightened from 2s to 1s while a new gateway client sat behind a
+  feature flag at partial rollout. Below 1.5s the new client cannot complete its handshake
+  against a slow upstream, so requests time out and the circuit breaker opens. Either half alone
+  is harmless; the interaction is what breaks payments.
+service: payments-api
+expected_severity: SEV1
+
+alert:
+  signal: error_rate_spike
+  summary: "payments-api error rate above 10% for 12 minutes"
+  impact: "Customers cannot complete checkout in us-east"
+  detected_at: 2026-01-31T09:41:00Z
+
+initial:
+  region: us-east
+  clock: 2026-01-31T09:56:00Z
+  request_rate_rps: 320
+  services:
+    - name: payments-api
+      deployed_version: v2.4.1
+      previous_version: v2.4.0
+      replicas: 6
+      min_replicas: 2
+      max_replicas: 24
+  flags:
+    - key: enable_new_gateway
+      regions:
+        us-east: true
+        eu-west: false
+  config:
+    - key: gateway_timeout_ms
+      value: 1000
+      previous_value: 2000
+    - key: circuit_breaker_threshold
+      value: 0.05
+  changes:
+    - at: 2026-01-30T22:15:00Z
+      kind: deploy
+      summary: "Deployed payments-api v2.4.1 (includes gateway client library v3.2.0)"
+      actor: ci-bot
+    - at: 2026-01-30T23:00:00Z
+      kind: feature_flag
+      summary: "Enabled enable_new_gateway for us-east (10% traffic)"
+      actor: release-eng
+    - at: 2026-01-31T03:45:00Z
+      kind: config
+      summary: "Reduced gateway request timeout from 2000ms to 1000ms"
+      actor: platform-eng
+
+baseline:
+  window: last_15_minutes
+  error_rate: 0.002
+  p95_latency_ms: 240
+  upstream_timeout_rate: 0.0
+  availability: 0.999
+  cpu_utilization_percent: 45
+  memory_usage_mb: 512
+  request_rate_rps: 320
+  replicas: 6
+
+baseline_logs:
+  - level: INFO
+    service: payments-api
+    message: "settlement batch completed batch_size=412"
+
+faults:
+  - id: gateway_timeout_too_low
+    description: >-
+      The new gateway client requires more than 1.5s to complete its TLS handshake and retry
+      budget against the upstream processor. Active while the flag is on in the affected region
+      and the timeout is below that floor.
+    when:
+      flag_enabled: [enable_new_gateway]
+      config_lt:
+        gateway_timeout_ms: 1500
+    effect:
+      error_rate: 0.122
+      p95_latency_ms: 1210
+      upstream_timeout_rate: 0.098
+      availability: -0.11
+    logs:
+      - level: ERROR
+        service: payments-api
+        message: "Failed to authorize payment: timeout contacting upstream gateway after {config.gateway_timeout_ms}ms"
+        count: 2
+      - level: WARN
+        service: payments-api
+        message: "Retry limit exceeded contacting gateway region={region}"
+      - level: ERROR
+        service: payments-api
+        message: "CircuitBreakerOpenException upstream gateway unavailable"
+      - level: INFO
+        service: health-check
+        message: "payments-api health=UNHEALTHY version={version.payments-api}"
+
+slo:
+  max_error_rate: 0.01
+  max_p95_latency_ms: 800
+  max_upstream_timeout_rate: 0.01
+  min_availability: 0.995
+  max_cpu_utilization_percent: 85
+  max_memory_usage_mb: 1600
+
+ground_truth:
+  action:
+    kind: set_config_value
+    key: gateway_timeout_ms
+    value: 2000
+  rationale: >-
+    Restoring gateway_timeout_ms to 2000 clears the fault condition immediately and is fully
+    reversible. Disabling enable_new_gateway in us-east also resolves it, but rolls back a
+    deliberate rollout rather than the change that actually broke it.
+  also_acceptable:
+    - kind: toggle_feature_flag
+      flag: enable_new_gateway
+      enabled: false
+      region: us-east

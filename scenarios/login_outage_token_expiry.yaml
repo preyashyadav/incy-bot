@@ -1,0 +1,98 @@
+key: login_outage_token_expiry
+title: Login outage — session tokens expiring immediately
+description: >-
+  auth-api v3.1.0 shipped a refactor that reads the session TTL as seconds where the config
+  supplies minutes, so freshly issued tokens expire 60 seconds after issue. Users authenticate
+  successfully and are bounced to the login screen on their next request. There is no config or
+  flag to change — the defect is in the deployed artifact, so the only remediation is a rollback.
+service: auth-api
+expected_severity: SEV1
+
+alert:
+  signal: availability_drop
+  summary: "auth-api session validation failures above 40%"
+  impact: "Users are repeatedly logged out and cannot maintain a session"
+  detected_at: 2026-02-04T14:02:00Z
+
+initial:
+  region: us-east
+  clock: 2026-02-04T14:20:00Z
+  request_rate_rps: 850
+  services:
+    - name: auth-api
+      deployed_version: v3.1.0
+      previous_version: v3.0.7
+      replicas: 8
+      min_replicas: 4
+      max_replicas: 32
+  flags:
+    - key: strict_token_binding
+      regions:
+        us-east: false
+        eu-west: false
+  config:
+    - key: session_ttl_minutes
+      value: 60
+  changes:
+    - at: 2026-02-04T13:40:00Z
+      kind: deploy
+      summary: "Deployed auth-api v3.1.0 (session handling refactor)"
+      actor: ci-bot
+
+baseline:
+  window: last_15_minutes
+  error_rate: 0.001
+  p95_latency_ms: 120
+  upstream_timeout_rate: 0.0
+  availability: 0.9995
+  cpu_utilization_percent: 38
+  memory_usage_mb: 640
+  request_rate_rps: 850
+  replicas: 8
+
+baseline_logs:
+  - level: INFO
+    service: auth-api
+    message: "token issuer healthy keyset_age_minutes=12"
+
+faults:
+  - id: session_ttl_unit_mismatch
+    description: >-
+      v3.1.0 interprets session_ttl_minutes as seconds. Tokens are issued with a 60-second
+      lifetime and fail validation on the next request.
+    when:
+      version_in:
+        auth-api: [v3.1.0]
+    effect:
+      error_rate: 0.41
+      p95_latency_ms: 60
+      availability: -0.38
+    logs:
+      - level: ERROR
+        service: auth-api
+        message: "TokenExpiredException validating session issued_seconds_ago=61 configured_ttl={config.session_ttl_minutes}"
+        count: 3
+      - level: WARN
+        service: auth-api
+        message: "Session refresh storm detected refresh_rate_multiplier=14x"
+      - level: INFO
+        service: health-check
+        message: "auth-api health=DEGRADED version={version.auth-api}"
+
+slo:
+  max_error_rate: 0.01
+  max_p95_latency_ms: 400
+  max_upstream_timeout_rate: 0.01
+  min_availability: 0.999
+  max_cpu_utilization_percent: 85
+  max_memory_usage_mb: 1600
+
+ground_truth:
+  action:
+    kind: rollback_deploy
+    service: auth-api
+    to_version: v3.0.7
+  rationale: >-
+    The defect is compiled into v3.1.0 and there is no configuration that corrects it —
+    session_ttl_minutes is already correct and is simply misread. Rolling back to v3.0.7 is the
+    only action that clears the fault.
