@@ -47,7 +47,6 @@ class Settings(BaseSettings):
         default=None,
         description="xapp-… token. Required only when slack_mode='socket'.",
     )
-    slack_channel_id: str | None = None
 
     # ---- anthropic --------------------------------------------------------
     anthropic_api_key: SecretStr | None = Field(

@@ -23,6 +23,9 @@ recovered.
 - **One transport abstraction, two adapters.** Socket Mode locally (no tunnel), Bolt's ASGI
   adapter on FastAPI in production (stateless, horizontally scalable). Same handler code.
 
+**Setting this up?** [`MANUAL.md`](MANUAL.md) has the full walkthrough — prerequisites,
+Slack app manifest, running it, and troubleshooting.
+
 ## Quick start
 
 ```bash
