@@ -123,70 +123,115 @@ cp -n .env.example .env
 It carries `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, and `SLACK_CHANNEL_ID` from the original
 IBM DevDay project, plus `PUBLIC_BASE_URL` and `INTERNAL_BASE_URL`.
 
-- **`SLACK_CHANNEL_ID`, `PUBLIC_BASE_URL`, `INTERNAL_BASE_URL` are no longer read by anything.**
-  Delete them. The channel now comes from wherever you type the slash command.
-- The existing `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` belong to the *old* Slack app. They will
-  only work if you reuse that same app and add the scopes in §5. Creating a fresh app is cleaner.
-- You need to add `ANTHROPIC_API_KEY` and `SLACK_APP_TOKEN`; neither is present.
+- **Keep** `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET` — they belong to your **incy** app, which
+  §5 updates in place rather than replacing. Re-copy the bot token after the reinstall in §5.2.
+- **Delete** `SLACK_CHANNEL_ID`, `PUBLIC_BASE_URL`, and `INTERNAL_BASE_URL`. Nothing reads them;
+  the channel now comes from wherever you type the slash command.
+- **Add** `ANTHROPIC_API_KEY` and `SLACK_APP_TOKEN`. Neither is present, and both are required —
+  the first for the agent, the second for Socket Mode.
 
 ---
 
-## 5. Create the Slack app
+## 5. Update your Slack app
 
-### 5.1 From a manifest (fastest)
+You already have an app (**incy**) and your `.env` tokens come from it. Keep it — updating the
+existing app is less work than creating a new one, and your signing secret stays valid.
 
-Go to **https://api.slack.com/apps → Create New App → From an app manifest**, pick your
-workspace, and paste this:
+Its current manifest is the IBM DevDay one and needs four things changed:
 
-```yaml
-display_information:
-  name: Incident Copilot
-  description: Investigates incidents, proposes remediation, waits for your approval.
-  background_color: "#1d1c1d"
-features:
-  bot_user:
-    display_name: Incident Copilot
-    always_online: true
-  slash_commands:
-    - command: /incident
-      description: Triage and investigate incidents
-      usage_hint: triage payments_gateway_timeout
-      should_escape: false
-oauth_config:
-  scopes:
-    bot:
-      - commands
-      - chat:write
-      - chat:write.public
-      - app_mentions:read
-settings:
-  event_subscriptions:
-    bot_events:
-      - app_mention
-  interactivity:
-    is_enabled: true
-  socket_mode_enabled: true
-  org_deploy_enabled: false
-  token_rotation_enabled: false
+| Current | Why it's wrong now |
+|---|---|
+| `redirect_urls` → watson-orchestrate.cloud.ibm.com | Orchestrate is gone |
+| `interactivity.request_url` → `…trycloudflare.com/slack/actions` | Dead tunnel, and `/slack/actions` no longer exists — this codebase serves `/slack/events` |
+| `socket_mode_enabled: false` | Socket Mode is what removes the tunnel requirement entirely |
+| scopes: `app_mentions:read`, `chat:write` | Missing `commands` (for `/incident`) and `chat:write.public` |
+| no `slash_commands` | `/incident` is the main entry point |
+| no `event_subscriptions` | `@incy` mentions need the `app_mention` bot event |
+
+### 5.1 Replace the manifest
+
+Go to **https://api.slack.com/apps → incy → App Manifest**, and replace the whole thing with
+[`slack-app-manifest.json`](slack-app-manifest.json) in this repo:
+
+```json
+{
+  "display_information": {
+    "name": "incy",
+    "description": "Investigates incidents, proposes remediation, waits for your approval.",
+    "background_color": "#b0440e"
+  },
+  "features": {
+    "bot_user": { "display_name": "incy", "always_online": true },
+    "slash_commands": [
+      {
+        "command": "/incident",
+        "description": "Triage and investigate incidents",
+        "usage_hint": "triage payments_gateway_timeout",
+        "should_escape": false
+      }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": ["commands", "chat:write", "chat:write.public", "app_mentions:read"]
+    }
+  },
+  "settings": {
+    "event_subscriptions": { "bot_events": ["app_mention"] },
+    "interactivity": { "is_enabled": true },
+    "socket_mode_enabled": true,
+    "org_deploy_enabled": false,
+    "token_rotation_enabled": false
+  }
+}
 ```
 
-### 5.2 Collect the two tokens
+No `request_url` anywhere and no `url` on the slash command — Slack rejects the manifest if
+Socket Mode is on and any of those are set. There is nothing to tunnel to.
 
-1. **Bot token** — *OAuth & Permissions* → **Install to Workspace** → copy `xoxb-…`
-   → `SLACK_BOT_TOKEN`
-2. **App-level token** — *Basic Information* → **App-Level Tokens** → *Generate Token and Scopes*
-   → name it anything, add the **`connections:write`** scope → copy `xapp-…`
-   → `SLACK_APP_TOKEN`
+### 5.2 Reinstall — and re-copy the bot token
 
-> The app-level token is the one people miss. Socket Mode cannot connect without it, and it is a
-> *different* token from the bot token — generated on a different page.
+Changing scopes means the app must be reinstalled: **Install App → Reinstall to Workspace**,
+approve the new permissions.
 
-### 5.3 Invite the bot to a channel
+⚠️ **Re-copy `xoxb-…` from *OAuth & Permissions* into `SLACK_BOT_TOKEN` afterwards.** A
+reinstall can issue a new bot token, and the symptom of a stale one is `invalid_auth` at startup
+rather than anything that names the cause.
 
-In Slack: `/invite @Incident Copilot`
+Your `SLACK_SIGNING_SECRET` is unaffected — it belongs to the app, not the installation. You
+don't need it at all in Socket Mode, but leave it in place for switching to HTTP later.
 
-`chat:write.public` lets it post to public channels it hasn't joined, but slash commands and
-threads behave better when it's actually a member.
+### 5.3 Generate the app-level token
+
+This is the one you don't have yet, and it is **not** the bot token.
+
+*Basic Information* → **App-Level Tokens** → **Generate Token and Scopes** → name it anything
+(e.g. `socket`) → add the **`connections:write`** scope → **Generate** → copy `xapp-…`
+
+Put it in `.env` as `SLACK_APP_TOKEN`.
+
+> Different token, different page, different prefix. Socket Mode cannot open its WebSocket
+> without it, and this is where setup usually stalls.
+
+### 5.4 Invite the bot
+
+In the channel you want to use:
+
+```
+/invite @incy
+```
+
+### 5.5 If you'd rather use HTTP than Socket Mode
+
+Keep a public URL (tunnel or deploy) and set, in the manifest:
+
+- `"socket_mode_enabled": false`
+- `"interactivity": { "is_enabled": true, "request_url": "https://<host>/slack/events" }`
+- `"event_subscriptions": { "request_url": "https://<host>/slack/events", "bot_events": ["app_mention"] }`
+- `"url": "https://<host>/slack/events"` on the slash command
+
+Then set `SLACK_MODE=http` in `.env`. Note the path: **`/slack/events`**, not the old
+`/slack/actions`. In this mode `make api` serves Slack and `make slack` is not used.
 
 ---
 
@@ -312,7 +357,9 @@ is live and covers it for now), and structured logging + a scripted demo walkthr
 | `make db-up` hangs | Docker Desktop not running | `open -a Docker`, wait, retry |
 | Tests skip with "Postgres unreachable" | DB is down | `make db-up && make migrate` |
 | `/incident` does nothing in Slack | `make slack` isn't running, or the app isn't in the channel | check terminal 3; `/invite @Incident Copilot` |
-| `Missing Slack configuration: SLACK_APP_TOKEN` | Socket Mode needs the app-level token | §5.2, step 2 |
+| `Missing Slack configuration: SLACK_APP_TOKEN` | Socket Mode needs the app-level token | §5.3 |
+| `invalid_auth` on startup | bot token went stale after a reinstall | re-copy `xoxb-…` (§5.2) |
+| Manifest rejected: request URL not allowed | `socket_mode_enabled: true` with a `request_url` set | remove every `request_url` and slash-command `url` |
 | Clicked Investigate, nothing appears | worker isn't running | start `make worker`; check for `pending` rows in `jobs` |
 | `no handler registered for job kind 'execute_remediation'` | phase 6 isn't built | expected — see §9 |
 | Investigation fails with an auth error | no Anthropic credentials | set `ANTHROPIC_API_KEY` in `.env` |
@@ -380,19 +427,19 @@ definitions are cached, so repeated runs are cheaper than the first.
 Setup already done in this environment: Postgres is running, migrations are at head, the index is
 built, and 375 tests pass. What's left is credentials and the Slack app.
 
-- [ ] **Add `ANTHROPIC_API_KEY=sk-ant-…` to `.env`** — nothing else unblocks the agent
+- [ ] **Add `ANTHROPIC_API_KEY=sk-ant-…` to `.env`** — the only thing blocking the agent
 - [ ] **Delete the dead entries from `.env`**: `SLACK_CHANNEL_ID`, `PUBLIC_BASE_URL`,
-      `INTERNAL_BASE_URL`
-- [ ] **Create the Slack app** from the manifest in §5.1
-- [ ] **Add `SLACK_APP_TOKEN=xapp-…`** and replace `SLACK_BOT_TOKEN` with the new app's token
-- [ ] **Invite the bot** to a channel
-- [ ] **Run `make test-live`** — worth doing before phase 6, since prompt fixes are cheaper now
-      than after more is built on top
-- [ ] **Start the three processes** and run `/incident triage payments_gateway_timeout`
+      `INTERNAL_BASE_URL` — nothing reads them
+- [ ] **Replace the app manifest** with `slack-app-manifest.json` (§5.1)
+- [ ] **Reinstall the app**, then **re-copy `SLACK_BOT_TOKEN`** (§5.2 — a reinstall can rotate it)
+- [ ] **Generate the app-level token** and add `SLACK_APP_TOKEN=xapp-…` (§5.3)
+- [ ] **`/invite @incy`** into a channel
+- [ ] **`make test-live`** — worth doing before phase 6, while prompt fixes are still cheap
+- [ ] **Start the three processes**, then `/incident triage payments_gateway_timeout`
 - [ ] Then try `noisy_neighbor_traffic_surge` and confirm it proposes *no action*
 
-Tell me when the live tests have run — if Claude misdiagnoses any scenario, the prompts in
-`incident_copilot/agent/prompts.py` are where to fix it.
+Tell me when the live tests have run — if Claude misdiagnoses any scenario,
+`incident_copilot/agent/prompts.py` is where to fix it.
 
 ---
 
@@ -401,6 +448,7 @@ Tell me when the live tests have run — if Claude misdiagnoses any scenario, th
 | Date | Change |
 |---|---|
 | 2026-09-03 | Created at the end of phase 5. Covers setup, Slack app creation, running, and the phase 6 gap. |
+| 2026-09-03 | §5 rewritten to update the existing **incy** app rather than create a new one; added `slack-app-manifest.json`. |
 
 This manual is updated at the end of every phase. Phase 6 will replace §9's "not built yet" with
 the execution and verification flow, and add a verdict card to §7.
