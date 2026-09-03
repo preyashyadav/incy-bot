@@ -6,8 +6,9 @@ concrete remediation actions with its reasoning. An engineer approves in the thr
 executes the approved actions, re-reads the metrics, and reports whether the incident actually
 recovered.
 
-> **Status: under construction.** Phase 0 (foundation) is complete. See [`PLAN.md`](PLAN.md) for
-> the architecture and remaining phases.
+> **Status: under construction.** Foundation, control plane, job queue, and the Claude agent
+> are complete; the Slack layer is next. See [`PLAN.md`](PLAN.md) for the architecture and
+> remaining phases.
 
 ## Why it's built this way
 
@@ -28,12 +29,15 @@ recovered.
 make install     # venv + dependencies
 make db-up       # Postgres 16 + pgvector via Docker
 make migrate     # apply migrations
+make index       # build the runbook + incident-history search index
 make check       # lint, type-check, test
 make api         # http://localhost:8000/healthz
+make worker      # the job worker, in a second terminal
 ```
 
-Copy `.env.example` to `.env` and fill in credentials as you need them. Nothing in phase 0
-requires Slack or Anthropic credentials.
+Copy `.env.example` to `.env` and fill in credentials as you need them. The test suite needs no
+credentials at all — it fakes the model's *choices* while running the real tools against the real
+database. To exercise the live model, set `ANTHROPIC_API_KEY` and run `make test-live`.
 
 ## Layout
 
@@ -44,10 +48,10 @@ requires Slack or Anthropic credentials.
 | `incident_copilot/controlplane/` | Simulated ops environment; metrics derived from state |
 | `incident_copilot/jobs/` | Postgres job queue and worker |
 | `incident_copilot/agent/` | Claude tool-use loop and structured proposals |
-| `incident_copilot/retrieval/` | Runbook and incident-history search |
-| `incident_copilot/slack/` | Bolt app, Block Kit, approval tokens |
-| `scenarios/` | Incident scenario packs |
-| `seed/` | Knowledge base and historical incidents |
+| `incident_copilot/retrieval/` | Corpus indexing and Postgres full-text search |
+| `incident_copilot/slack/` | Bolt app, Block Kit, approval tokens *(phase 5)* |
+| `scenarios/` | Five incident scenario packs |
+| `seed/kb/`, `seed/history/` | Runbooks, policies, and 24 resolved past incidents |
 
 ## Commands
 

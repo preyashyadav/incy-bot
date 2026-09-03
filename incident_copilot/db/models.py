@@ -20,6 +20,7 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    Computed,
     Enum,
     ForeignKey,
     Index,
@@ -30,7 +31,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -420,9 +421,29 @@ class KBChunk(Base):
     content: Mapped[str] = mapped_column(Text)
     source: Mapped[str] = mapped_column(Text)
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    # Denormalised copy of `tags`, because a generated column cannot read JSONB portably and
+    # tags carry the identifiers (flag names, service names) that exact-match queries hit on.
+    tags_text: Mapped[str] = mapped_column(Text, default="")
     meta: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )
 
-    __table_args__ = (CheckConstraint("corpus IN ('kb','history')", name="corpus_valid"),)
+    # Maintained by Postgres, not the application: a trigger-free generated column cannot drift
+    # from the row it indexes, and a re-index is a plain UPDATE.
+    # Weight A (title, tags) outranks weight B (body), so a runbook *about* gateway timeouts
+    # beats one that merely mentions them.
+    tsv: Mapped[str] = mapped_column(
+        TSVECTOR,
+        Computed(
+            "setweight(to_tsvector('english', coalesce(title, '')), 'A') || "
+            "setweight(to_tsvector('english', coalesce(tags_text, '')), 'A') || "
+            "setweight(to_tsvector('english', coalesce(content, '')), 'B')",
+            persisted=True,
+        ),
+    )
+
+    __table_args__ = (
+        CheckConstraint("corpus IN ('kb','history')", name="corpus_valid"),
+        Index("ix_kb_chunks_tsv", "tsv", postgresql_using="gin"),
+    )

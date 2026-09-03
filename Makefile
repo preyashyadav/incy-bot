@@ -2,7 +2,7 @@
 PY := .venv/bin/python
 PIP := .venv/bin/pip
 
-.PHONY: help venv install db-up db-down db-reset migrate revision api worker lint fmt type test check clean
+.PHONY: help venv install db-up db-down db-reset migrate revision index api worker lint fmt type test test-live check clean
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -27,12 +27,16 @@ db-reset: ## Destroy and recreate the database volume
 	docker compose down -v
 	$(MAKE) db-up
 	$(MAKE) migrate
+	$(MAKE) index
 
 migrate: ## Apply migrations
 	$(PY) -m alembic upgrade head
 
 revision: ## Autogenerate a migration: make revision m="add incidents"
 	$(PY) -m alembic revision --autogenerate -m "$(m)"
+
+index: ## Rebuild the runbook and incident-history search index
+	$(PY) -m incident_copilot.retrieval
 
 api: ## Run the API with reload
 	$(PY) -m uvicorn incident_copilot.api.main:app --reload --port 8000
@@ -52,6 +56,9 @@ type: ## Type-check
 
 test: ## Run tests (excludes live-API tests)
 	$(PY) -m pytest -q
+
+test-live: ## Run the live-model tests (costs money, needs ANTHROPIC_API_KEY)
+	$(PY) -m pytest -m live -v
 
 check: lint type test ## Everything CI runs
 

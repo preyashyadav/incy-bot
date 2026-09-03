@@ -1,6 +1,6 @@
 # Incident Copilot — Rebuild Plan
 
-**Status:** building — MVP track (§12), phases 0–2 complete
+**Status:** building — MVP track (§12), phases 0–2 and 4 complete; phase 5 (Slack) next
 **Date:** 2026-09-02
 **Owner:** @preyashyadav
 
@@ -393,8 +393,8 @@ Each phase leaves the repo in a working state.
 | 0 | ✅ **Teardown & foundation** | IBM/Orchestrate artifacts deleted (`openapi.json`, `openapiv2.json`, the `.pages` doc, approvals polling bridge). New package layout, `pydantic-settings` config, Docker Compose (postgres+pgvector), Alembic baseline, Makefile, CI. | 0.5d |
 | 1 | ✅ **Control plane & scenarios** | State model, metrics/logs simulator, action catalogue, 5 scenario packs, reset endpoint. Unit tested. | 1d |
 | 2 | ✅ **Data model & job queue** | All tables, event log, queue with SKIP LOCKED, worker process, backoff, reaper. Concurrency tests. | 1d |
-| 3 | **Retrieval** | KB + history corpora authored, chunking, fastembed, hybrid search with RRF, recall@3 golden set. | 1d |
-| 4 | **Agent** | Read-only tool surface, investigate loop, structured proposal, prompt caching, cassette tests. | 1d |
+| 3 | ◑ **Retrieval** | KB + history corpora authored, chunking, recall@3 golden set — **lexical half done in phase 4**. Remaining: fastembed embeddings, pgvector column, RRF fusion. | 0.5d |
+| 4 | ✅ **Agent** | Read-only tool surface, investigate loop, structured proposal, prompt caching, cassette tests. | 1d |
 | 5 | **Slack** | Bolt with both adapters, alert/proposal/verification cards, approval tokens, idempotency, modal. | 1.5d |
 | 6 | **Execute & verify** | Approval → execution → re-read metrics → recovery verdict → re-propose on failure. Full E2E per scenario. | 1d |
 | 7 | **Polish** | README with a scripted demo walkthrough, architecture diagram, structured logging, seed history expanded to 40, `pgvector` tuning. | 0.5d |
