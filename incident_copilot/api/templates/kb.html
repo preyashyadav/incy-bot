@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Knowledge base · Incident Copilot{% endblock %}
+{% block content %}
+<h1>Knowledge base</h1>
+<p class="sub">{{ kb|length }} runbook and policy sections · {{ history|length }} resolved
+  incidents. This is everything the agent can retrieve.</p>
+
+<h2>Runbooks &amp; policies</h2>
+<div class="panel tablewrap">
+  <table>
+    <thead><tr><th>Section</th><th>Source</th><th>Tags</th></tr></thead>
+    <tbody>
+    {% for c in kb %}
+      <tr><td><a href="/dashboard/kb/{{ c.chunk_id }}">{{ c.title }}</a></td>
+          <td class="muted mono" style="font-size:.85em">{{ c.source }}</td>
+          <td class="muted" style="font-size:.82em">{{ c.tags[:4]|join(', ') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2>Resolved incident history</h2>
+<div class="panel tablewrap">
+  <table>
+    <thead><tr><th>Incident</th><th>Service</th><th>Sev</th><th>Resolved by</th></tr></thead>
+    <tbody>
+    {% for c in history %}
+      <tr><td><a href="/dashboard/kb/{{ c.chunk_id }}">{{ c.title }}</a></td>
+          <td class="mono">{{ c.meta.get('service', '—') }}</td>
+          <td><span class="pill {{ c.meta.get('severity','') }}">{{ c.meta.get('severity','—') }}</span></td>
+          <td><code>{{ c.meta.get('resolution_kind', '—') }}</code></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

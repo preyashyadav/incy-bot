@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ chunk.title }} · Incident Copilot{% endblock %}
+{% block content %}
+<h1>{{ chunk.title }}</h1>
+<p class="sub">
+  <code>{{ chunk.chunk_id }}</code> · from <code>{{ chunk.source }}</code>
+  {% if chunk.corpus == 'history' %} · resolved incident record{% endif %}
+</p>
+
+<div class="panel"><pre>{{ chunk.content }}</pre></div>
+
+{% if chunk.tags %}
+<h2>Tags</h2>
+<div class="panel chips">
+  {% for t in chunk.tags %}<span class="chip mono">{{ t }}</span>{% endfor %}
+</div>
+{% endif %}
+
+{% if cited_by %}
+<h2>Cited by</h2>
+<div class="panel">
+  <ul class="tight">
+    {% for i in cited_by %}
+      <li><a href="/dashboard/incidents/{{ i.key }}" class="mono">{{ i.key }}</a>
+          — {{ i.title|truncate(70) }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<p><a href="/dashboard/kb">← back to the knowledge base</a></p>
+{% endblock %}

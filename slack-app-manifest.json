@@ -1,0 +1,44 @@
+{
+  "display_information": {
+    "name": "incy",
+    "description": "Investigates incidents, proposes remediation, waits for your approval.",
+    "background_color": "#b0440e"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "incy",
+      "always_online": true
+    },
+    "slash_commands": [
+      {
+        "command": "/incident",
+        "description": "Triage and investigate incidents",
+        "usage_hint": "triage payments_gateway_timeout",
+        "should_escape": false
+      }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "commands",
+        "chat:write",
+        "chat:write.public",
+        "app_mentions:read"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "app_mention"
+      ]
+    },
+    "interactivity": {
+      "is_enabled": true
+    },
+    "socket_mode_enabled": true,
+    "org_deploy_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

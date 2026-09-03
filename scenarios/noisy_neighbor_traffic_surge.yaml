@@ -1,0 +1,113 @@
+key: noisy_neighbor_traffic_surge
+title: Traffic surge on feed-api — autoscaler already absorbed it
+description: >-
+  A marketing send drove request volume to 2.8x baseline. The autoscaler responded correctly and
+  every metric is inside SLO; the page fired on a raw-latency threshold that does not account for
+  load. The correct answer is to take no action.
+
+  This scenario is the counterweight to the rest of the catalogue. An incident bot that always
+  proposes a remediation is not reasoning, it is pattern-matching — and the cost of a needless
+  rollback during a traffic spike is real. The dormant `undersized_for_surge` rule below means
+  the judgement is live rather than trivial: scaling *down* would cause the very incident that
+  was paged for.
+service: feed-api
+expected_severity: SEV3
+
+alert:
+  signal: p95_latency_spike
+  summary: "feed-api p95 latency above static 250ms threshold"
+  impact: "No customer-visible failures reported"
+  detected_at: 2026-03-02T16:12:00Z
+
+initial:
+  region: us-east
+  clock: 2026-03-02T16:30:00Z
+  request_rate_rps: 900
+  services:
+    - name: feed-api
+      deployed_version: v6.0.3
+      previous_version: v6.0.2
+      # Already scaled out from the baseline of 6 — this is the autoscaler working.
+      replicas: 16
+      min_replicas: 4
+      max_replicas: 40
+  flags:
+    - key: personalised_ranking
+      regions:
+        us-east: true
+        eu-west: true
+  config:
+    - key: feed_page_size
+      value: 25
+    - key: upstream_fanout
+      value: 4
+  changes:
+    - at: 2026-03-02T15:55:00Z
+      kind: scale
+      summary: "Autoscaler scaled feed-api 6 → 16 replicas (CPU target 60%)"
+      actor: autoscaler
+    - at: 2026-02-27T11:00:00Z
+      kind: deploy
+      summary: "Deployed feed-api v6.0.3 (ranking model refresh)"
+      actor: ci-bot
+
+baseline:
+  window: last_15_minutes
+  error_rate: 0.0018
+  p95_latency_ms: 240
+  upstream_timeout_rate: 0.0
+  availability: 0.9993
+  cpu_utilization_percent: 45
+  memory_usage_mb: 700
+  request_rate_rps: 320
+  replicas: 6
+
+baseline_logs:
+  - level: INFO
+    service: feed-api
+    message: "request volume elevated rps=900 replicas={replicas.feed-api} — within capacity"
+  - level: INFO
+    service: autoscaler
+    message: "feed-api scaled to {replicas.feed-api} replicas, cpu target satisfied"
+
+faults:
+  # Declared but NOT active in the initial state. It becomes active only if replicas drop below
+  # 10 while the surge continues — which is what makes scaling down the genuinely wrong move.
+  - id: undersized_for_surge
+    description: >-
+      At surge volume, fewer than 10 replicas leaves each instance over-subscribed, saturating
+      the upstream fanout pool and pushing latency past SLO.
+    when:
+      rps_gt: 600
+      replicas_lt:
+        feed-api: 10
+    effect:
+      p95_latency_ms: 900
+      error_rate: 0.06
+      upstream_timeout_rate: 0.04
+      availability: -0.05
+    logs:
+      - level: ERROR
+        service: feed-api
+        message: "Upstream fanout pool exhausted size={config.upstream_fanout} replicas={replicas.feed-api}"
+        count: 2
+      - level: WARN
+        service: feed-api
+        message: "Shed load to protect upstream shed_rate=0.04"
+
+slo:
+  max_error_rate: 0.01
+  max_p95_latency_ms: 800
+  max_upstream_timeout_rate: 0.01
+  min_availability: 0.995
+  max_cpu_utilization_percent: 85
+  max_memory_usage_mb: 1600
+
+ground_truth:
+  action:
+    kind: no_action
+    reason: Every metric is inside SLO and the autoscaler has already added capacity.
+  rationale: >-
+    Every metric is inside SLO. The elevated latency is proportional to load and the autoscaler
+    has already added capacity. The correct output is an explanation, a recommendation to make
+    the alert threshold load-aware, and no change to the running system.

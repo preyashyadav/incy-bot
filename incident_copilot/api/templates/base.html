@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Incident Copilot{% endblock %}</title>
+<style>
+  :root {
+    --bg: #fbfbfa; --panel: #fff; --border: #e3e2df; --text: #1f1e1c;
+    --muted: #6b6862; --accent: #b0440e; --code-bg: #f4f3f0;
+    --sev1: #c0392b; --sev2: #d68910; --sev3: #b7950b; --ok: #1e8449;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17161a; --panel: #1e1d22; --border: #333138; --text: #e8e6e3;
+      --muted: #9b968e; --accent: #e08a5c; --code-bg: #26252b;
+      --sev1: #e57373; --sev2: #e8a33d; --sev3: #d4c05a; --ok: #6bbf7b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em;
+  }
+  code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+  header {
+    border-bottom: 1px solid var(--border); background: var(--panel);
+    padding: 14px 28px; display: flex; gap: 22px; align-items: baseline;
+    position: sticky; top: 0; z-index: 5;
+  }
+  header .brand { font-weight: 700; letter-spacing: -0.01em; }
+  header nav a { color: var(--muted); font-size: 0.9em; }
+  header nav a.on { color: var(--text); font-weight: 600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 28px; }
+  h1 { font-size: 1.5em; margin: 0 0 4px; letter-spacing: -0.02em; }
+  h2 { font-size: 1.05em; margin: 30px 0 10px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); margin: 0 0 22px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 20px; margin-bottom: 16px;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 0.8em; text-transform: uppercase;
+       letter-spacing: 0.05em; }
+  tr:last-child td { border-bottom: none; }
+  .tablewrap { overflow-x: auto; }
+  .pill {
+    display: inline-block; padding: 1px 9px; border-radius: 999px;
+    font-size: 0.78em; font-weight: 600; border: 1px solid currentColor;
+  }
+  .SEV1 { color: var(--sev1); } .SEV2 { color: var(--sev2); } .SEV3 { color: var(--sev3); }
+  .ok { color: var(--ok); } .muted { color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+  .stat .label {
+    color: var(--muted); font-size: 0.76em; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .stat .value { font-size: 1.25em; font-weight: 650; }
+  ul.tight { margin: 6px 0; padding-left: 20px; }
+  ul.tight li { margin: 3px 0; }
+  .timeline { list-style: none; margin: 0; padding: 0; }
+  .timeline li {
+    display: flex; gap: 12px; padding: 7px 0; border-bottom: 1px dashed var(--border);
+  }
+  .timeline li:last-child { border-bottom: none; }
+  .timeline .when { color: var(--muted); min-width: 72px; }
+  .timeline .what { font-weight: 600; min-width: 190px; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 13px 15px; overflow-x: auto; margin: 0; font-size: 0.86em; line-height: 1.5;
+  }
+  .empty { color: var(--muted); font-style: italic; }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 3px 9px; font-size: 0.82em;
+  }
+  .chip.tool { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">Incident Copilot</span>
+  <nav>
+    <a href="/dashboard" class="{{ 'on' if nav == 'incidents' else '' }}">Incidents</a>
+    &nbsp;·&nbsp;
+    <a href="/dashboard/kb" class="{{ 'on' if nav == 'kb' else '' }}">Knowledge base</a>
+    &nbsp;·&nbsp;
+    <a href="/dashboard/scenarios" class="{{ 'on' if nav == 'scenarios' else '' }}">Scenarios</a>
+    &nbsp;·&nbsp;
+    <a href="/docs" class="muted">API</a>
+  </nav>
+</header>
+<main>{% block content %}{% endblock %}</main>
+</body>
+</html>

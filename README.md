@@ -1,85 +1,84 @@
-# Incident Evidence Service
+# Incident Copilot
 
-FastAPI service for incident response demos. It handles incident intake, evidence retrieval from fixtures, KB search, Slack-triggered workflows, and an OpenAI-powered agent that uses internal tools.
+A Slack-native incident response copilot. An alert lands in a channel; the bot investigates —
+gathering metrics, logs, recent changes, runbooks, and *similar past incidents* — then proposes
+concrete remediation actions with its reasoning. An engineer approves in the thread. The bot
+executes the approved actions, re-reads the metrics, and reports whether the incident actually
+recovered.
 
-<img width="3024" height="1964" alt="image" src="https://github.com/user-attachments/assets/bd03a763-e15d-49a9-a337-4e4721520505" />
+> **Status: under construction.** Everything up to human approval works end to end: alert →
+> investigate → proposal card → approve/reject. Executing the approved remediation and
+> verifying recovery is the next phase. See [`PLAN.md`](PLAN.md).
 
+## Why it's built this way
 
-## Features
-- Incident lifecycle endpoints: create, assign, evidence, notes.
-- KB search with SQLite FTS5 chunks.
-- Slack alert posting and interactive approvals.
-- OpenAI agent loop that calls local tools (create incident, fetch evidence, KB search, notes).
+- **The agent's tools are read-only.** Investigation structurally cannot mutate anything. Every
+  change goes through an explicit human approval gate with a single-use, server-side token.
+- **Metrics are derived from control-plane state**, not read from fixtures. Approving the right
+  fix visibly drops the error rate; approving the wrong one doesn't, and verification fails
+  honestly.
+- **Slack work happens in a durable queue.** Handlers ack within Slack's 3-second budget and
+  enqueue; a separate worker claims jobs from Postgres with `SELECT … FOR UPDATE SKIP LOCKED`,
+  retries with backoff, and survives restarts.
+- **One transport abstraction, two adapters.** Socket Mode locally (no tunnel), Bolt's ASGI
+  adapter on FastAPI in production (stateless, horizontally scalable). Same handler code.
 
-## Quick Start
-1. Create a virtual environment and install dependencies.
-2. Configure env vars (see `.env.example`).
-3. Run the API.
+**Setting this up?** [`MANUAL.md`](MANUAL.md) has the full walkthrough — prerequisites,
+Slack app manifest, running it, and troubleshooting.
+
+## Quick start
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+make install     # venv + dependencies
+make db-up       # Postgres 16 + pgvector via Docker
+make migrate     # apply migrations
+make index       # build the runbook + incident-history search index
+make check       # lint, type-check, test
+make api         # http://localhost:8000/healthz
+make worker      # the job worker, in a second terminal
+make slack       # Socket Mode, in a third (needs SLACK_APP_TOKEN)
 ```
 
-## Environment Variables
-Required for OpenAI agent:
-- `OPENAI_API_KEY`
+Copy `.env.example` to `.env` and fill in credentials as you need them. The test suite needs no
+credentials at all — it fakes the model's *choices* while running the real tools against the real
+database. To exercise the live model, set `ANTHROPIC_API_KEY` and run `make test-live`.
 
-Optional OpenAI settings:
-- `OPENAI_MODEL` (default `gpt-4o-mini`)
-- `OPENAI_TIMEOUT` (seconds, default `20`)
-- `OPENAI_BASE_URL` (default `https://api.openai.com/v1`)
+## Layout
 
-Required for Slack:
-- `SLACK_BOT_TOKEN`
-- `SLACK_SIGNING_SECRET`
-- `SLACK_CHANNEL_ID`
+| Path | Contents |
+|---|---|
+| `incident_copilot/config.py` | Typed settings — the only place env vars are read |
+| `incident_copilot/db/` | SQLAlchemy models, session management, Alembic migrations |
+| `incident_copilot/controlplane/` | Simulated ops environment; metrics derived from state |
+| `incident_copilot/jobs/` | Postgres job queue and worker |
+| `incident_copilot/agent/` | Claude tool-use loop and structured proposals |
+| `incident_copilot/retrieval/` | Corpus indexing and Postgres full-text search |
+| `incident_copilot/slack/` | Bolt app (both transports), Block Kit, approval flow |
+| `scenarios/` | Five incident scenario packs |
+| `seed/kb/`, `seed/history/` | Runbooks, policies, and 24 resolved past incidents |
 
-Notes:
-- `.env` is loaded automatically by `app/main.py`.
-- Never commit secrets; use `.env.example` as a template.
+## Using it from Slack
 
-## API Overview
-Core endpoints:
-- `POST /incidents`
-- `POST /incidents/{incident_id}/assign`
-- `GET /incidents/{incident_id}/evidence`
-- `POST /incidents/{incident_id}/notes`
-- `GET /kb/search`
-- `POST /incident/start`
-- `POST /approvals`
-- `GET /approvals/next`
-- `POST /slack/alert`
-- `POST /slack/actions`
+```
+/incident list                          list the scenarios
+/incident triage payments_gateway_timeout   post an alert card
+/incident status INC-1234               show an incident's timeline
+@copilot INC-1234                       ask what happened
+```
 
-OpenAPI specs:
-- `openapi.json`
-- `openapiv2.json`
+Click **Investigate** on the alert card; the copilot posts a proposal into the thread with its
+hypothesis, the evidence it cited, prior incidents it found, and each action's risk. **Show
+evidence** opens the full audit trail. Approving is what authorises any change.
 
-## How the Agent Works
-The OpenAI agent in `app/agent.py`:
-1. Receives the alert payload.
-2. Calls internal tools via function calls:
-   - create incident
-   - assign owners
-   - fetch evidence
-   - search KB
-   - add notes
-3. Returns a structured JSON response for Slack.
+### Slack setup
 
-Slack flow:
-- `/slack/alert` posts the interactive alert message.
-- `/slack/actions` runs the agent and posts the incident summary to the thread.
+`SLACK_MODE=socket` (the default) needs `SLACK_BOT_TOKEN` and an app-level `SLACK_APP_TOKEN`
+(`xapp-…`, created under *Basic Information → App-Level Tokens* with `connections:write`), and no
+public URL. `SLACK_MODE=http` needs `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET`, and Slack must
+be pointed at `POST /slack/events`.
 
-If `OPENAI_API_KEY` is not set, Slack actions fall back to fixture-only behavior.
+Bot scopes: `commands`, `chat:write`, `app_mentions:read`.
 
-## Data Storage
-- SQLite DB at `app/incidents.db`
-- KB chunks stored in SQLite FTS5 (`kb_chunks` table)
+## Commands
 
-## Development Notes
-- Fixtures live in `app/fixtures/payments_failing`.
-- Only `payments_failing` fixtures exist by default; other incident types will return missing-fixture errors.
-
+Run `make` with no arguments for the full list.

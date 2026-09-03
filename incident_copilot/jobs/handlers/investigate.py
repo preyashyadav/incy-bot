@@ -1,0 +1,171 @@
+"""The `investigate` job: run the agent and record a proposal awaiting approval.
+
+Idempotency: delivery is at-least-once, so this handler can run twice for one incident. Running
+the agent again is wasteful but safe — the second proposal supersedes the first via
+`create_proposal`, and neither can be executed without a fresh approval token. The guard below
+short-circuits the common case so a redelivery does not pay for a second model call.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from incident_copilot.agent.runner import AgentError, run_agent
+from incident_copilot.agent.schemas import InvalidProposedAction
+from incident_copilot.config import get_settings
+from incident_copilot.controlplane.pg_store import PostgresControlPlaneStore
+from incident_copilot.controlplane.scenarios import get_registry
+from incident_copilot.db import repositories as repo
+from incident_copilot.db.models import (
+    ApprovalToken,
+    EventType,
+    Incident,
+    Job,
+    Proposal,
+    ProposalStatus,
+)
+from incident_copilot.jobs import handlers
+from incident_copilot.retrieval.index import is_indexed
+from incident_copilot.slack import blocks as B
+from incident_copilot.slack.notify import get_notifier
+
+logger = logging.getLogger(__name__)
+
+
+@handlers.register("investigate")
+def handle_investigate(session: Session, job: Job) -> None:
+    incident = session.get(Incident, job.incident_id) if job.incident_id else None
+    if incident is None:
+        raise ValueError(f"job {job.id} has no resolvable incident")
+
+    existing = session.execute(
+        select(Proposal).where(
+            Proposal.incident_id == incident.id, Proposal.status == ProposalStatus.PENDING
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        logger.info("incident %s already has a pending proposal; skipping", incident.key)
+        return
+
+    settings = get_settings()
+    scenario = get_registry().get(incident.scenario_key)
+    state = PostgresControlPlaneStore().get_in(session, incident.scenario_key)
+
+    if not is_indexed(session):
+        # Not fatal — the agent can still reason from telemetry — but it means every runbook
+        # and prior-incident search will come back empty, so say so rather than letting the
+        # investigation look complete.
+        logger.warning(
+            "knowledge base is empty; %s will be investigated from telemetry alone. "
+            "Run `make index`.",
+            incident.key,
+        )
+
+    repo.append_event(session, incident, EventType.INVESTIGATION_STARTED)
+
+    try:
+        proposal, result = run_agent(session, scenario, state)
+    except AgentError as exc:
+        # A failed investigation is reportable, not silent. The event goes on the timeline so the
+        # Slack thread can say what happened and the incident lands in needs_attention.
+        repo.append_event(
+            session, incident, EventType.ERROR, {"stage": "investigate", "error": str(exc)}
+        )
+        raise
+
+    repo.append_event(
+        session,
+        incident,
+        EventType.EVIDENCE_GATHERED,
+        {
+            "tool_calls": result.tool_calls,
+            "transcript": result.transcript,
+            "cited_chunks": result.cited_chunks,
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+        },
+    )
+
+    # Validate the actions before the proposal is recorded, so a card is never rendered with a
+    # button that cannot execute.
+    try:
+        validated = proposal.validated_actions()
+    except InvalidProposedAction as exc:
+        repo.append_event(
+            session, incident, EventType.ERROR, {"stage": "propose", "error": str(exc)}
+        )
+        raise AgentError(f"proposed action was not executable: {exc}") from exc
+
+    if proposal.severity != incident.severity:
+        # The alert's severity is a first guess; the agent has evidence the alert did not.
+        logger.info(
+            "incident %s reclassified %s -> %s", incident.key, incident.severity, proposal.severity
+        )
+        repo.append_event(
+            session,
+            incident,
+            EventType.NOTE_ADDED,
+            {"note": "severity_reclassified", "from": incident.severity, "to": proposal.severity},
+        )
+        incident.severity = proposal.severity
+
+    incident.summary = proposal.summary
+
+    record = repo.create_proposal(
+        session,
+        incident,
+        severity=proposal.severity,
+        hypothesis=proposal.hypothesis,
+        confidence=proposal.confidence,
+        actions=[action.model_dump(mode="json") for action in proposal.actions],
+        evidence_cited=proposal.evidence_cited,
+        similar_incidents=proposal.similar_incidents,
+        verification_plan=proposal.verification_plan,
+        next_update_minutes=proposal.next_update_minutes,
+        raw=proposal.model_dump(mode="json"),
+    )
+
+    # Mint the tokens the card's buttons carry, in the same transaction as the proposal so a
+    # card can never be rendered against authorisations that were rolled back.
+    approve = repo.issue_approval_token(
+        session, record, decision="approve", ttl_seconds=settings.approval_token_ttl_seconds
+    )
+    reject = repo.issue_approval_token(
+        session, record, decision="reject", ttl_seconds=settings.approval_token_ttl_seconds
+    )
+
+    _post_proposal(incident, record, approve, reject)
+
+    logger.info(
+        "incident %s: %s proposed with %s action(s), confidence %s",
+        incident.key,
+        proposal.severity,
+        len(validated),
+        proposal.confidence,
+    )
+
+
+def _post_proposal(
+    incident: Incident,
+    proposal: Proposal,
+    approve: ApprovalToken,
+    reject: ApprovalToken,
+) -> None:
+    """Post the approval card into the incident thread.
+
+    Best-effort: a Slack failure must not fail the job. The work is already recorded, and
+    raising here would make an at-least-once retry re-run the whole investigation — paying for a
+    second model call to fix a posting problem.
+    """
+    if not incident.slack_channel_id:
+        logger.debug("incident %s has no slack thread; skipping card", incident.key)
+        return
+    get_notifier().post(
+        incident.slack_channel_id,
+        B.proposal_text(incident, proposal),
+        thread_ts=incident.slack_thread_ts,
+        blocks=B.proposal_blocks(incident, proposal, approve_token=approve, reject_token=reject),
+    )

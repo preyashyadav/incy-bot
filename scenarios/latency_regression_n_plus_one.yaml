@@ -1,0 +1,100 @@
+key: latency_regression_n_plus_one
+title: Search latency regression — N+1 queries after ORM change
+description: >-
+  search-api v1.9.0 replaced a hand-written join with a lazy ORM relationship, producing one
+  query per result row. p95 latency quadrupled while the error rate barely moved. This scenario
+  exists to test severity judgement: it is a real, customer-visible degradation, but nothing is
+  failing, so it is a SEV2 and not a SEV1.
+service: search-api
+expected_severity: SEV2
+
+alert:
+  signal: p95_latency_spike
+  summary: "search-api p95 latency above 3s for 20 minutes"
+  impact: "Search results are slow; no requests are failing"
+  detected_at: 2026-02-11T11:15:00Z
+
+initial:
+  region: eu-west
+  clock: 2026-02-11T11:35:00Z
+  request_rate_rps: 210
+  services:
+    - name: search-api
+      deployed_version: v1.9.0
+      previous_version: v1.8.4
+      replicas: 5
+      min_replicas: 2
+      max_replicas: 20
+  flags:
+    - key: use_query_cache
+      regions:
+        eu-west: true
+        us-east: true
+  config:
+    - key: db_pool_size
+      value: 20
+    - key: search_result_limit
+      value: 50
+  changes:
+    - at: 2026-02-11T10:50:00Z
+      kind: deploy
+      summary: "Deployed search-api v1.9.0 (ORM relationship refactor)"
+      actor: ci-bot
+
+baseline:
+  window: last_15_minutes
+  error_rate: 0.0015
+  p95_latency_ms: 310
+  upstream_timeout_rate: 0.0
+  availability: 0.9992
+  cpu_utilization_percent: 42
+  memory_usage_mb: 780
+  request_rate_rps: 210
+  replicas: 5
+
+baseline_logs:
+  - level: INFO
+    service: search-api
+    message: "index refresh completed documents=18422"
+
+faults:
+  - id: orm_n_plus_one
+    description: >-
+      v1.9.0 issues one query per result row instead of a single join. Latency scales with
+      search_result_limit; the connection pool saturates but requests still complete.
+    when:
+      version_in:
+        search-api: [v1.9.0]
+    effect:
+      p95_latency_ms: 2900
+      error_rate: 0.004
+      cpu_utilization_percent: 26
+    logs:
+      - level: WARN
+        service: search-api
+        message: "Slow query detected duration_ms=2840 rows_fetched={config.search_result_limit}"
+        count: 2
+      - level: WARN
+        service: search-api
+        message: "Connection pool saturated size={config.db_pool_size} waiters=31"
+      - level: INFO
+        service: search-api
+        message: "Request completed status=200 duration_ms=3120"
+
+slo:
+  max_error_rate: 0.02
+  max_p95_latency_ms: 900
+  max_upstream_timeout_rate: 0.02
+  min_availability: 0.995
+  max_cpu_utilization_percent: 85
+  max_memory_usage_mb: 1600
+
+ground_truth:
+  action:
+    kind: rollback_deploy
+    service: search-api
+    to_version: v1.8.4
+  rationale: >-
+    The regression is in v1.9.0. Scaling replicas or raising the pool size masks the symptom
+    without removing the extra queries, and lowering search_result_limit degrades the product to
+    hide a bug.

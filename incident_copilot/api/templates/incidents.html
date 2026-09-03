@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Incidents · Incident Copilot{% endblock %}
+{% block content %}
+<h1>Incidents</h1>
+<p class="sub">{{ incidents|length }} incident{{ '' if incidents|length == 1 else 's' }} ·
+  {{ resolved }} resolved · {{ awaiting }} awaiting approval</p>
+
+{% if not incidents %}
+  <div class="panel empty">
+    Nothing yet. Run <code>/incident</code> in Slack and click Triage.
+  </div>
+{% else %}
+<div class="panel tablewrap">
+  <table>
+    <thead>
+      <tr><th>Incident</th><th>Sev</th><th>Service</th><th>Status</th>
+          <th>Proposed fix</th><th>Opened</th></tr>
+    </thead>
+    <tbody>
+    {% for row in incidents %}
+      <tr>
+        <td><a href="/dashboard/incidents/{{ row.incident.key }}" class="mono">{{ row.incident.key }}</a><br>
+            <span class="muted" style="font-size:.85em">{{ row.incident.title|truncate(58) }}</span></td>
+        <td><span class="pill {{ row.incident.severity }}">{{ row.incident.severity }}</span></td>
+        <td class="mono">{{ row.incident.service }}</td>
+        <td>{{ row.incident.status.value.replace('_', ' ') }}</td>
+        <td>
+          {% if row.actions %}
+            {% for a in row.actions %}<code>{{ a }}</code>{% if not loop.last %} {% endif %}{% endfor %}
+          {% else %}<span class="empty">—</span>{% endif %}
+        </td>
+        <td class="muted mono">{{ row.incident.opened_at.strftime('%d %b %H:%M') }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

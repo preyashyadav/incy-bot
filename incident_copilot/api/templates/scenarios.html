@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Scenarios · Incident Copilot{% endblock %}
+{% block content %}
+<h1>Scenarios</h1>
+<p class="sub">The simulated incidents. Metrics are derived from live control-plane state, so a
+  correct remediation moves these numbers and a wrong one does not.</p>
+
+{% for s in scenarios %}
+<div class="panel" id="{{ s.key }}">
+  <h2 style="margin-top:0">{{ s.title }}
+    <span class="pill {{ s.expected_severity }}">{{ s.expected_severity }}</span></h2>
+  <p class="mono muted" style="font-size:.85em;margin:0 0 10px">{{ s.key }}</p>
+  <p style="margin:0 0 14px">{{ s.description }}</p>
+  <div class="grid">
+    <div class="stat"><div class="label">Health</div>
+      <div class="value {{ 'ok' if s.healthy else 'SEV1' }}">
+        {{ 'within SLO' if s.healthy else 'breaching' }}</div></div>
+    <div class="stat"><div class="label">Error rate</div>
+      <div class="value">{{ '%.2f'|format(s.metrics.error_rate * 100) }}%</div></div>
+    <div class="stat"><div class="label">p95 latency</div>
+      <div class="value">{{ s.metrics.p95_latency_ms|int }} ms</div></div>
+    <div class="stat"><div class="label">Requests</div>
+      <div class="value">{{ s.metrics.request_rate_rps|int }} rps</div></div>
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

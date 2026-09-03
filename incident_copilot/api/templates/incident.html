@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}{{ incident.key }} · Incident Copilot{% endblock %}
+{% block content %}
+<h1>{{ incident.key }}
+  <span class="pill {{ incident.severity }}">{{ incident.severity }}</span></h1>
+<p class="sub">{{ incident.title }}</p>
+
+<div class="panel grid">
+  <div class="stat"><div class="label">Status</div>
+    <div class="value">{{ incident.status.value.replace('_',' ') }}</div></div>
+  <div class="stat"><div class="label">Service</div>
+    <div class="value mono">{{ incident.service }}</div></div>
+  <div class="stat"><div class="label">Region</div>
+    <div class="value mono">{{ incident.region or '—' }}</div></div>
+  <div class="stat"><div class="label">Scenario</div>
+    <div class="value"><a href="/dashboard/scenarios#{{ incident.scenario_key }}"
+      class="mono" style="font-size:.8em">{{ incident.scenario_key }}</a></div></div>
+</div>
+
+{% if health %}
+<h2>System state now</h2>
+<div class="panel grid">
+  <div class="stat"><div class="label">Health</div>
+    <div class="value {{ 'ok' if health.healthy else 'SEV1' }}">
+      {{ 'within SLO' if health.healthy else 'breaching' }}</div></div>
+  <div class="stat"><div class="label">Error rate</div>
+    <div class="value">{{ '%.2f'|format(metrics.error_rate * 100) }}%</div></div>
+  <div class="stat"><div class="label">p95 latency</div>
+    <div class="value">{{ metrics.p95_latency_ms|int }} ms</div></div>
+  <div class="stat"><div class="label">Active faults</div>
+    <div class="value mono" style="font-size:.8em">
+      {{ health.active_faults|join(', ') if health.active_faults else 'none' }}</div></div>
+</div>
+{% endif %}
+
+{% if proposal %}
+<h2>Diagnosis</h2>
+<div class="panel">
+  <p style="margin-top:0"><strong>{{ proposal.hypothesis }}</strong></p>
+  <p class="muted" style="margin-bottom:0">
+    Confidence <strong>{{ proposal.confidence }}</strong> ·
+    proposal {{ proposal.status.value }}
+    {%- if proposal.decided_by %} by {{ proposal.decided_by }}{% endif %}
+  </p>
+  {% if ruled_out %}
+    <h2 style="font-size:.9em;margin-bottom:4px">Ruled out</h2>
+    <ul class="tight">{% for r in ruled_out %}<li>{{ r }}</li>{% endfor %}</ul>
+  {% endif %}
+</div>
+
+<h2>Proposed actions</h2>
+<div class="panel">
+  {% for a in actions %}
+    <div style="padding:8px 0;{{ '' if loop.last else 'border-bottom:1px dashed var(--border)' }}">
+      <strong>{{ loop.index }}. {{ a.describe }}</strong>
+      <span class="pill muted" style="margin-left:6px">{{ a.risk }} risk</span>
+      {% if a.reversible %}<span class="pill ok">reversible</span>{% endif %}
+      <div class="muted">{{ a.rationale }}</div>
+    </div>
+  {% else %}
+    <span class="empty">No actions recorded.</span>
+  {% endfor %}
+  {% if proposal.verification_plan %}
+    <p class="muted" style="margin-bottom:0"><strong>Verification:</strong>
+      {{ proposal.verification_plan }}</p>
+  {% endif %}
+</div>
+
+<h2>Where the answer came from</h2>
+<div class="panel">
+  <div class="label muted" style="font-size:.78em;text-transform:uppercase">Cited as support</div>
+  <div class="chips" style="margin:8px 0 16px">
+    {% for c in citations %}
+      {% if c.url %}<a href="{{ c.url }}" class="chip mono">{{ c.label }}</a>
+      {% else %}<span class="chip tool mono">{{ c.label }}</span>{% endif %}
+    {% else %}<span class="empty">Nothing cited.</span>{% endfor %}
+  </div>
+
+  <div class="label muted" style="font-size:.78em;text-transform:uppercase">Documents retrieved</div>
+  <div class="chips" style="margin:8px 0 16px">
+    {% for c in retrieved %}
+      <a href="{{ c.url }}" class="chip mono">{{ c.label }}</a>
+    {% else %}<span class="empty">None retrieved.</span>{% endfor %}
+  </div>
+
+  <div class="label muted" style="font-size:.78em;text-transform:uppercase">Tools called</div>
+  <div class="chips" style="margin-top:8px">
+    {% for t in transcript %}<span class="chip tool mono">{{ t }}</span>
+    {% else %}<span class="empty">No tool calls recorded.</span>{% endfor %}
+  </div>
+
+  {% if usage %}
+    <p class="muted" style="margin:16px 0 0;font-size:.86em">
+      {{ usage.tool_calls }} tool calls ·
+      {{ '{:,}'.format(usage.input_tokens) }} in / {{ '{:,}'.format(usage.output_tokens) }} out tokens
+    </p>
+  {% endif %}
+</div>
+{% else %}
+<div class="panel empty">No proposal yet — the investigation has not finished.</div>
+{% endif %}
+
+{% if executions %}
+<h2>What was applied</h2>
+<div class="panel tablewrap">
+  <table>
+    <thead><tr><th>Action</th><th>Status</th><th>Result</th><th>Finished</th></tr></thead>
+    <tbody>
+    {% for e in executions %}
+      <tr><td class="mono">{{ e.kind }}</td>
+          <td class="{{ 'ok' if e.status.value == 'succeeded' else 'SEV1' }}">{{ e.status.value }}</td>
+          <td>{{ e.summary or e.error or '—' }}</td>
+          <td class="muted">{{ e.finished_at.strftime('%H:%M:%S') if e.finished_at else '—' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<h2>Timeline</h2>
+<div class="panel">
+  <ul class="timeline">
+    {% for e in events %}
+      <li>
+        <span class="when mono">{{ e.created_at.strftime('%H:%M:%S') }}</span>
+        <span class="what">{{ e.type.value.replace('_', ' ') }}</span>
+        <span class="muted">{{ e.detail }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endblock %}
